@@ -77,7 +77,7 @@ public class FilmController {
         if (film.getReleaseDate() == null || film.getReleaseDate().isBefore(CINEMA_BIRTHDAY)) {
             throw new ValidationException("Дата релиза — не раньше " + CINEMA_BIRTHDAY);
         }
-        if (film.getDuration() <= 0 ) {
+        if (film.getDuration() <= 0) {
             throw new ValidationException("Продолжительность фильма должна быть положительным числом.");
         }
     }
