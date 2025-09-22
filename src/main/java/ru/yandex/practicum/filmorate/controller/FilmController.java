@@ -1,5 +1,6 @@
 package ru.yandex.practicum.filmorate.controller;
 
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 import ru.yandex.practicum.filmorate.exception.ValidationException;
@@ -28,57 +29,40 @@ public class FilmController {
     }
 
     @PostMapping
-    public Film create(@RequestBody Film film) {
-        try {
-            validateFilm(film);
-            film.setId(getNextId());
-            films.put(film.getId(), film);
-            log.info("Фильм добавлен: {}", film);
-            return film;
-        } catch (ValidationException e) {
-            log.error("Ошибка добавления фильма: {}", e.getMessage());
-            throw e;
-        }
+    public Film create(@Valid @RequestBody Film film) {
+        validateReleaseDate(film);
+        film.setId(getNextId());
+        films.put(film.getId(), film);
+
+        log.info("Фильм добавлен: {}", film);
+        return film;
     }
 
     @PutMapping
-    public Film update(@RequestBody Film updatedFilm) {
-        try {
-            if (updatedFilm.getId() == 0) {
-                throw new ValidationException("Id должен быть указан.");
-            }
-
-            Film existing = films.get(updatedFilm.getId());
-
-            if (existing == null) {
-                throw new ValidationException("Фильм с id = " + updatedFilm.getId() + " не найден.");
-            }
-            validateFilm(updatedFilm);
-
-            existing.setName(updatedFilm.getName());
-            existing.setDescription(updatedFilm.getDescription());
-            existing.setReleaseDate(updatedFilm.getReleaseDate());
-            existing.setDuration(updatedFilm.getDuration());
-            log.info("Фильм обновлён: {}", existing);
-            return existing;
-        } catch (ValidationException e) {
-            log.error("Ошибка обновления фильма: {}", e.getMessage());
-            throw e;
+    public Film update(@Valid @RequestBody Film updatedFilm) {
+        if (updatedFilm.getId() == null) {
+            throw new ValidationException("Id должен быть указан.");
         }
+
+        Film existing = films.get(updatedFilm.getId());
+        if (existing == null) {
+            throw new ValidationException("Фильм с id = " + updatedFilm.getId() + " не найден.");
+        }
+
+        validateReleaseDate(updatedFilm);
+
+        existing.setName(updatedFilm.getName());
+        existing.setDescription(updatedFilm.getDescription());
+        existing.setReleaseDate(updatedFilm.getReleaseDate());
+        existing.setDuration(updatedFilm.getDuration());
+
+        log.info("Фильм обновлён: {}", existing);
+        return existing;
     }
 
-    private void validateFilm(Film film) {
-        if (film.getName() == null || film.getName().isBlank()) {
-            throw new ValidationException("Название не может быть пустым.");
-        }
-        if (film.getDescription() != null && film.getDescription().length() > 200) {
-            throw new ValidationException("Длина описания не должна быть больше 200 символов.");
-        }
-        if (film.getReleaseDate() == null || film.getReleaseDate().isBefore(CINEMA_BIRTHDAY)) {
+    private void validateReleaseDate(Film film) {
+        if (film.getReleaseDate().isBefore(CINEMA_BIRTHDAY)) {
             throw new ValidationException("Дата релиза — не раньше " + CINEMA_BIRTHDAY);
-        }
-        if (film.getDuration() <= 0) {
-            throw new ValidationException("Продолжительность фильма должна быть положительным числом.");
         }
     }
 }
