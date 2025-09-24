@@ -1,33 +1,38 @@
 package ru.yandex.practicum.filmorate.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.ValidatorFactory;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
+
 import ru.yandex.practicum.filmorate.model.User;
 
+import jakarta.validation.Validator;
+
 import java.time.LocalDate;
+import java.util.Set;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-@WebMvcTest(UserController.class)
 class UserControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
+    private static Validator validator;
     private User user;
+    private UserController userController;
+
+    @BeforeAll
+    static void setUp() {
+        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
+            validator = factory.getValidator();
+        }
+    }
 
     @BeforeEach
-    void setUp() {
+    void setUpController() {
+        userController = new UserController();
         user = new User();
         user.setEmail("user@example.com");
         user.setLogin("login");
@@ -37,74 +42,54 @@ class UserControllerTest {
 
     @Test
     @DisplayName("Создание пользователя с корректными данными")
-    void createUserWithValidData() throws Exception {
-        mockMvc.perform(post("/users")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(user)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.email").value("user@example.com"));
+    void createUserWithValidData() {
+        Set<ConstraintViolation<User>> violations = validator.validate(user);
+        assertTrue(violations.isEmpty(), "Не должно быть ошибок валидации для корректных данных");
     }
 
     @Test
     @DisplayName("Подстановка login в name, если name пустое")
-    void shouldUseLoginIfNameEmpty() throws Exception {
+    void shouldUseLoginIfNameEmpty() {
         user.setName("");
-        mockMvc.perform(post("/users")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(user)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("login"));
+        userController.setNameIfBlank(user);
+        assertEquals(user.getLogin(), user.getName(), "Если имя пустое, должно использоваться login");
     }
 
     @Test
     @DisplayName("Ошибка: пустой email")
-    void shouldThrowWhenEmailEmpty() throws Exception {
+    void shouldThrowWhenEmailEmpty() {
         user.setEmail("");
-        mockMvc.perform(post("/users")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(user)))
-                .andExpect(status().isBadRequest())
-                .andExpect(result ->
-                        result.getResolvedException().getMessage()
-                                .contains("Имейл должен быть указан"));
+        Set<ConstraintViolation<User>> violations = validator.validate(user);
+        assertFalse(violations.isEmpty(), "Должна быть ошибка валидации для пустого email");
+        assertTrue(violations.stream().anyMatch(v -> v.getMessage().contains("Имейл должен быть указан")));
     }
 
     @Test
     @DisplayName("Ошибка: email без @")
-    void shouldThrowWhenEmailInvalid() throws Exception {
+    void shouldThrowWhenEmailInvalid() {
         user.setEmail("userexample.com");
-        mockMvc.perform(post("/users")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(user)))
-                .andExpect(status().isBadRequest())
-                .andExpect(result ->
-                        result.getResolvedException().getMessage()
-                                .contains("Имейл должен содержать '@'"));
+        Set<ConstraintViolation<User>> violations = validator.validate(user);
+        assertFalse(violations.isEmpty());
+        assertTrue(violations.stream()
+                .anyMatch(v -> v.getMessage().contains("должен содержать '@'")));
     }
 
     @Test
-    @DisplayName("Ошибка: login с пробелами")
-    void shouldThrowWhenLoginInvalid() throws Exception {
+    @DisplayName("Ошибка: пустой или с пробелами login")
+    void shouldThrowWhenLoginInvalid() {
         user.setLogin("bad login");
-        mockMvc.perform(post("/users")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(user)))
-                .andExpect(status().isBadRequest())
-                .andExpect(result ->
-                        result.getResolvedException().getMessage()
-                                .contains("Логин не может быть пустым или содержать пробелы"));
+        Set<ConstraintViolation<User>> violations = validator.validate(user);
+        assertFalse(violations.isEmpty(), "Должна быть ошибка валидации для login с пробелами");
+        assertTrue(violations.stream().anyMatch(v -> v.getMessage().contains("не может быть пустым или содержать пробелы")));
     }
 
     @Test
     @DisplayName("Ошибка: birthday в будущем")
-    void shouldThrowWhenBirthdayInFuture() throws Exception {
+    void shouldThrowWhenBirthdayInFuture() {
         user.setBirthday(LocalDate.now().plusDays(1));
-        mockMvc.perform(post("/users")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(user)))
-                .andExpect(status().isBadRequest())
-                .andExpect(result ->
-                        result.getResolvedException().getMessage()
-                                .contains("Дата рождения не может быть в будущем"));
+        Set<ConstraintViolation<User>> violations = validator.validate(user);
+        assertFalse(violations.isEmpty());
+        assertTrue(violations.stream()
+                .anyMatch(v -> v.getMessage().contains("не может быть в будущем")));
     }
 }

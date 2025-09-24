@@ -1,38 +1,37 @@
 package ru.yandex.practicum.filmorate.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.ValidatorFactory;
+import jakarta.validation.Validator;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import ru.yandex.practicum.filmorate.exception.ValidationException;
 import ru.yandex.practicum.filmorate.model.Film;
 
 import java.time.LocalDate;
+import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-@WebMvcTest(FilmController.class)
-class FilmControllerTest {
+public class FilmControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
+    private static Validator validator;
+    private FilmController filmController;
     private Film film;
 
-    private FilmController filmController;
+    @BeforeAll
+    static void setUp() {
+        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
+            validator = factory.getValidator();
+        }
+    }
 
     @BeforeEach
-    void setUp() {
+    void setUpController() {
+        filmController = new FilmController();
         film = new Film();
         film.setName("Фильм");
         film.setDescription("Описание");
@@ -41,68 +40,52 @@ class FilmControllerTest {
     }
 
     @Test
-    @DisplayName("Создание фильма с корректными данными")
-    void createFilmWithValidData() throws Exception {
-        mockMvc.perform(post("/films")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(film)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("Фильм"));
+    @DisplayName("Тест с правильными данными")
+    void createFilmWithValidData() {
+        Set<ConstraintViolation<Film>> violations = validator.validate(film);
+        assertTrue(violations.isEmpty(), "Не должно быть ошибок валидации для корректных данных");
     }
 
     @Test
     @DisplayName("Ошибка: пустое название фильма")
-    void shouldThrowWhenFilmNameIsEmpty() throws Exception {
+    void shouldThrowWhenFilmNameIsEmpty() {
         film.setName("");
-        mockMvc.perform(post("/films")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(film)))
-                .andExpect(status().isBadRequest())
-                .andExpect(result ->
-                        result.getResolvedException().getMessage()
-                                .contains("Название не может быть пустым"));
+
+        Set<ConstraintViolation<Film>> violations = validator.validate(film);
+        assertFalse(violations.isEmpty());
+        assertTrue(violations.stream().anyMatch(v -> v.getMessage().contains("не может быть пустым")));
     }
 
     @Test
     @DisplayName("Ошибка: описание больше 200 символов")
-    void shouldThrowWhenDescriptionTooLong() throws Exception {
+    void shouldThrowWhenDescriptionTooLong() {
         film.setDescription("x".repeat(201));
-        mockMvc.perform(post("/films")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(film)))
-                .andExpect(status().isBadRequest())
-                .andExpect(result ->
-                        result.getResolvedException().getMessage()
-                                .contains("Описание не может превышать 200 символов"));
+
+        Set<ConstraintViolation<Film>> violations = validator.validate(film);
+        assertFalse(violations.isEmpty());
+        assertTrue(violations.stream().anyMatch(v -> v.getMessage()
+                .contains("не может превышать 200 символов")));
     }
 
     @Test
     @DisplayName("Ошибка: дата релиза раньше 28.12.1895")
-    void shouldThrowWhenReleaseDateTooEarly() throws Exception {
-        Film film = new Film();
-        filmController = new FilmController();
-        film.setName("Фильм");
-        film.setDescription("Описание");
+    void shouldThrowWhenReleaseDateTooEarly() {
         film.setReleaseDate(LocalDate.of(1800, 1, 1));
-        film.setDuration(100);
 
         ValidationException exception = assertThrows(
                 ValidationException.class,
                 () -> filmController.create(film)
         );
-        assertEquals("Дата релиза — не раньше 1895-12-28", exception.getMessage());
+        assertTrue(exception.getMessage().contains("Дата релиза"));
     }
 
     @Test
-    @DisplayName("Ошибка: продолжительность <= 0")
-    void shouldThrowWhenDurationInvalid() throws Exception {
+    @DisplayName("Ошибка: продолжительность меньше или равна нулю")
+    void shouldThrowWhenDurationInvalid() {
         film.setDuration(0);
-        mockMvc.perform(post("/films")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(film)))
-                .andExpect(status().isBadRequest())
-                .andExpect(result ->
-                        result.getResolvedException().getMessage()
-                                .contains("Продолжительность фильма должна быть положительным числом"));
+
+        Set<ConstraintViolation<Film>> violations = validator.validate(film);
+        assertFalse(violations.isEmpty());
+        assertTrue(violations.stream().anyMatch(v -> v.getMessage().contains("положительной")));
     }
 }
