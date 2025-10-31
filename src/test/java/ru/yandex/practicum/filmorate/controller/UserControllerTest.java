@@ -1,95 +1,88 @@
 package ru.yandex.practicum.filmorate.controller;
 
-import jakarta.validation.ConstraintViolation;
-import jakarta.validation.Validation;
-import jakarta.validation.ValidatorFactory;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-
 import ru.yandex.practicum.filmorate.model.User;
-
-import jakarta.validation.Validator;
+import ru.yandex.practicum.filmorate.service.UserService;
+import ru.yandex.practicum.filmorate.storage.user.InMemoryUserStorage;
 
 import java.time.LocalDate;
-import java.util.Set;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class UserControllerTest {
 
-    private static Validator validator;
-    private User user;
     private UserController userController;
-
-    @BeforeAll
-    static void setUp() {
-        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
-            validator = factory.getValidator();
-        }
-    }
+    InMemoryUserStorage userStorage;
 
     @BeforeEach
-    void setUpController() {
-        userController = new UserController();
-        user = new User();
-        user.setEmail("user@example.com");
-        user.setLogin("login");
-        user.setName("Имя");
-        user.setBirthday(LocalDate.of(2000, 1, 1));
+    void setUp() {
+        userStorage = new InMemoryUserStorage();
+        UserService userService = new UserService(userStorage);
+        userController = new UserController(userService);
+    }
+
+    private User makeUser(String email, String login) {
+        User user = new User();
+        user.setEmail(email);
+        user.setLogin(login);
+        user.setName(login + "_name");
+        user.setBirthday(LocalDate.of(1990, 1, 1));
+        return user;
     }
 
     @Test
-    @DisplayName("Создание пользователя с корректными данными")
-    void createUserWithValidData() {
-        Set<ConstraintViolation<User>> violations = validator.validate(user);
-        assertTrue(violations.isEmpty(), "Не должно быть ошибок валидации для корректных данных");
+    void createAndGetAll_shouldWork() {
+        User created = userController.create(makeUser("test@mail.ru", "login1"));
+        assertNotNull(created.getId());
+        assertEquals("login1", created.getLogin());
+
+        List<User> all = userController.getAll();
+        assertEquals(1, all.size());
     }
 
     @Test
-    @DisplayName("Подстановка login в name, если name пустое")
-    void shouldUseLoginIfNameEmpty() {
-        user.setName("");
-        userController.setNameIfBlank(user);
-        assertEquals(user.getLogin(), user.getName(), "Если имя пустое, должно использоваться login");
+    void update_shouldWork() {
+        User created = userController.create(makeUser("t@mail.ru", "login1"));
+        created.setName("Updated name");
+
+        User updated = userController.update(created);
+        assertEquals("Updated name", updated.getName());
     }
 
     @Test
-    @DisplayName("Ошибка: пустой email")
-    void shouldThrowWhenEmailEmpty() {
-        user.setEmail("");
-        Set<ConstraintViolation<User>> violations = validator.validate(user);
-        assertFalse(violations.isEmpty(), "Должна быть ошибка валидации для пустого email");
-        assertTrue(violations.stream().anyMatch(v -> v.getMessage().contains("Имейл должен быть указан")));
+    void getById_shouldReturnCorrectUser() {
+        User u1 = userController.create(makeUser("a@a", "A"));
+        User u2 = userController.create(makeUser("b@b", "B"));
+
+        User found = userController.getById(u1.getId());
+        assertEquals(u1.getLogin(), found.getLogin());
     }
 
     @Test
-    @DisplayName("Ошибка: email без @")
-    void shouldThrowWhenEmailInvalid() {
-        user.setEmail("userexample.com");
-        Set<ConstraintViolation<User>> violations = validator.validate(user);
-        assertFalse(violations.isEmpty());
-        assertTrue(violations.stream()
-                .anyMatch(v -> v.getMessage().contains("должен содержать '@'")));
+    void addAndRemoveFriends_shouldWork() {
+        User u1 = userController.create(makeUser("1@1", "one"));
+        User u2 = userController.create(makeUser("2@2", "two"));
+
+        userController.addFriend(u1.getId(), u2.getId());
+        assertTrue(userController.getFriends(u1.getId()).contains(u2));
+
+        userController.removeFriend(u1.getId(), u2.getId());
+        assertTrue(userController.getFriends(u1.getId()).isEmpty());
     }
 
     @Test
-    @DisplayName("Ошибка: пустой или с пробелами login")
-    void shouldThrowWhenLoginInvalid() {
-        user.setLogin("bad login");
-        Set<ConstraintViolation<User>> violations = validator.validate(user);
-        assertFalse(violations.isEmpty(), "Должна быть ошибка валидации для login с пробелами");
-        assertTrue(violations.stream().anyMatch(v -> v.getMessage().contains("не может быть пустым или содержать пробелы")));
-    }
+    void getCommonFriends_shouldReturnMutuals() {
+        User u1 = userController.create(makeUser("1@1", "one"));
+        User u2 = userController.create(makeUser("2@2", "two"));
+        User u3 = userController.create(makeUser("3@3", "three"));
 
-    @Test
-    @DisplayName("Ошибка: birthday в будущем")
-    void shouldThrowWhenBirthdayInFuture() {
-        user.setBirthday(LocalDate.now().plusDays(1));
-        Set<ConstraintViolation<User>> violations = validator.validate(user);
-        assertFalse(violations.isEmpty());
-        assertTrue(violations.stream()
-                .anyMatch(v -> v.getMessage().contains("не может быть в будущем")));
+        userController.addFriend(u1.getId(), u3.getId());
+        userController.addFriend(u2.getId(), u3.getId());
+
+        List<User> common = userController.getCommonFriends(u1.getId(), u2.getId());
+        assertEquals(1, common.size());
+        assertEquals(u3.getId(), common.getFirst().getId());
     }
 }

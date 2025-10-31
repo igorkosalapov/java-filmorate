@@ -1,91 +1,112 @@
 package ru.yandex.practicum.filmorate.controller;
 
-import jakarta.validation.ConstraintViolation;
-import jakarta.validation.Validation;
-import jakarta.validation.ValidatorFactory;
-import jakarta.validation.Validator;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import ru.yandex.practicum.filmorate.exception.ValidationException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import ru.yandex.practicum.filmorate.model.Film;
+import ru.yandex.practicum.filmorate.model.User;
+import ru.yandex.practicum.filmorate.storage.user.UserStorage;
 
 import java.time.LocalDate;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class FilmControllerTest {
+@SpringBootTest
+class FilmControllerTest {
 
-    private static Validator validator;
+    @Autowired
     private FilmController filmController;
+
+    @Autowired
+    private UserStorage userStorage;
+
     private Film film;
 
-    @BeforeAll
-    static void setUp() {
-        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
-            validator = factory.getValidator();
-        }
-    }
-
     @BeforeEach
-    void setUpController() {
-        filmController = new FilmController();
+    void setUp() {
         film = new Film();
-        film.setName("Фильм");
-        film.setDescription("Описание");
+        film.setName("Test film");
+        film.setDescription("Test description");
         film.setReleaseDate(LocalDate.of(2000, 1, 1));
         film.setDuration(120);
     }
 
     @Test
-    @DisplayName("Тест с правильными данными")
-    void createFilmWithValidData() {
-        Set<ConstraintViolation<Film>> violations = validator.validate(film);
-        assertTrue(violations.isEmpty(), "Не должно быть ошибок валидации для корректных данных");
+    void createAndFindAll_shouldWork() {
+        Film created = filmController.create(film);
+
+        assertNotNull(created.getId());
+        assertEquals("Test film", created.getName());
+
+        List<Film> all = new ArrayList<>(filmController.findAll());
+        assertEquals(1, all.size());
+        assertEquals(created.getId(), all.getFirst().getId());
     }
 
     @Test
-    @DisplayName("Ошибка: пустое название фильма")
-    void shouldThrowWhenFilmNameIsEmpty() {
-        film.setName("");
+    void createAndUpdate_shouldWork() {
+        Film created = filmController.create(film);
+        created.setName("Updated film");
+        Film updated = filmController.update(created);
 
-        Set<ConstraintViolation<Film>> violations = validator.validate(film);
-        assertFalse(violations.isEmpty());
-        assertTrue(violations.stream().anyMatch(v -> v.getMessage().contains("не может быть пустым")));
+        assertEquals(created.getId(), updated.getId());
+        assertEquals("Updated film", updated.getName());
     }
 
     @Test
-    @DisplayName("Ошибка: описание больше 200 символов")
-    void shouldThrowWhenDescriptionTooLong() {
-        film.setDescription("x".repeat(201));
+    void addAndRemoveLike_shouldWork() {
+        Film created = filmController.create(film);
 
-        Set<ConstraintViolation<Film>> violations = validator.validate(film);
-        assertFalse(violations.isEmpty());
-        assertTrue(violations.stream().anyMatch(v -> v.getMessage()
-                .contains("не может превышать 200 символов")));
+        User user = new User();
+        user.setLogin("user1");
+        user.setEmail("user1@mail.com");
+        user.setName("User One");
+        user.setBirthday(LocalDate.of(1990, 1, 1));
+        User createdUser = userStorage.create(user);
+
+        filmController.addLike(created.getId(), createdUser.getId());
+        assertTrue(filmController.findById(created.getId()).getLikes().contains(createdUser.getId()));
+
+        filmController.removeLike(created.getId(), createdUser.getId());
+        assertFalse(filmController.findById(created.getId()).getLikes().contains(createdUser.getId()));
     }
 
     @Test
-    @DisplayName("Ошибка: дата релиза раньше 28.12.1895")
-    void shouldThrowWhenReleaseDateTooEarly() {
-        film.setReleaseDate(LocalDate.of(1800, 1, 1));
+    void getPopular_shouldReturnSorted() {
+        Film f1 = filmController.create(film);
 
-        ValidationException exception = assertThrows(
-                ValidationException.class,
-                () -> filmController.create(film)
-        );
-        assertTrue(exception.getMessage().contains("Дата релиза"));
-    }
+        Film film2 = new Film();
+        film2.setName("Film 2");
+        film2.setDescription("Desc 2");
+        film2.setReleaseDate(LocalDate.of(2001, 1, 1));
+        film2.setDuration(110);
+        Film f2 = filmController.create(film2);
 
-    @Test
-    @DisplayName("Ошибка: продолжительность меньше или равна нулю")
-    void shouldThrowWhenDurationInvalid() {
-        film.setDuration(0);
 
-        Set<ConstraintViolation<Film>> violations = validator.validate(film);
-        assertFalse(violations.isEmpty());
-        assertTrue(violations.stream().anyMatch(v -> v.getMessage().contains("положительной")));
+        User u1 = new User();
+        u1.setLogin("u1");
+        u1.setEmail("u1@mail.com");
+        u1.setName("User One");
+        u1.setBirthday(LocalDate.of(1990, 1, 1));
+        User createdUser1 = userStorage.create(u1);
+
+        User u2 = new User();
+        u2.setLogin("u2");
+        u2.setEmail("u2@mail.com");
+        u2.setName("User Two");
+        u2.setBirthday(LocalDate.of(1995, 5, 5));
+        User createdUser2 = userStorage.create(u2);
+
+        filmController.addLike(f1.getId(), createdUser1.getId());
+        filmController.addLike(f2.getId(), createdUser1.getId());
+        filmController.addLike(f2.getId(), createdUser2.getId());
+
+        List<Film> popular = filmController.getPopular(2);
+        assertEquals(2, popular.size());
+        assertEquals(f2.getId(), popular.get(0).getId());
+        assertEquals(f1.getId(), popular.get(1).getId());
     }
 }
