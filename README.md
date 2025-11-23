@@ -6,7 +6,7 @@
 ## Схема базы данных
 Ниже представлена ER-диаграмма базы данных Filmorate:
 
-![Filmorate Database Diagram](er-diagram.png)
+![Filmorate Database Diagram](my-diagram.png)
 ---
 ## Краткое пояснение к схеме
 - **films** — информация о фильмах + рейтинг MPA.
