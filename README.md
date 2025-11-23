@@ -6,7 +6,7 @@
 ## Схема базы данных
 Ниже представлена ER-диаграмма базы данных Filmorate:
 
-![Filmorate Database Diagram](er-diagram.png)
+![Filmorate Database Diagram](my-diagram.png)
 ---
 ## Краткое пояснение к схеме
 - **films** — информация о фильмах + рейтинг MPA.
@@ -38,15 +38,4 @@ GROUP BY film_id
 ORDER BY likes DESC
 
 LIMIT 10;
-```
-### 3. Получить друзей пользователя
-```sql
-
-SELECT friend_id
-
-FROM friendships
-
-WHERE user_id = 1
-
-  AND status = 'CONFIRMED';
 ```
