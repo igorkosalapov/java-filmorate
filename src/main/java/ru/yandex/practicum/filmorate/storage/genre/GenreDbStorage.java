@@ -6,9 +6,8 @@ import org.springframework.stereotype.Component;
 import ru.yandex.practicum.filmorate.mapper.GenreRowMapper;
 import ru.yandex.practicum.filmorate.model.Genre;
 
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Component("genreDbStorage")
 @RequiredArgsConstructor
@@ -42,8 +41,55 @@ public class GenreDbStorage implements GenreStorage {
     }
 
     @Override
+    public List<Genre> findByIds(Set<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+
+        String placeholders = ids.stream()
+                .map(id -> "?")
+                .collect(Collectors.joining(","));
+
+        String sql = """
+                SELECT * FROM genres
+                WHERE id IN (%s)
+                ORDER BY id
+                """.formatted(placeholders);
+
+        return jdbc.query(sql, mapper, ids.toArray());
+    }
+
+    @Override
     public List<Genre> findGenresByFilmId(Long filmId) {
         return jdbc.query(FIND_BY_FILM_SQL, mapper, filmId);
+    }
+
+    @Override
+    public Map<Long, List<Genre>> findGenresForFilms(Set<Long> filmIds) {
+        if (filmIds.isEmpty()) return Map.of();
+
+        String placeholders = filmIds.stream()
+                .map(id -> "?")
+                .collect(Collectors.joining(","));
+
+        String sql = """
+        SELECT fg.film_id, g.id, g.name
+        FROM film_genres fg
+        JOIN genres g ON g.id = fg.genre_id
+        WHERE fg.film_id IN (%s)
+        ORDER BY g.id
+        """.formatted(placeholders);
+
+        Map<Long, List<Genre>> result = new HashMap<>();
+
+        jdbc.query(sql, rs -> {
+            Long filmId = rs.getLong("film_id");
+            Genre genre = new Genre(rs.getLong("id"), rs.getString("name"));
+
+            result.computeIfAbsent(filmId, k -> new ArrayList<>()).add(genre);
+        }, filmIds.toArray());
+
+        return result;
     }
 
     public void updateGenresOfFilm(Long filmId, Set<Genre> genres) {
@@ -58,9 +104,9 @@ public class GenreDbStorage implements GenreStorage {
 
         String sql = "INSERT INTO film_genres (film_id, genre_id) VALUES (?, ?)";
 
-        for (Genre genre : genres) {
-            jdbc.update(sql, filmId, genre.getId());
-        }
+        genres.stream()
+                .map(Genre::getId)
+                .distinct()
+                .forEach(id -> jdbc.update(sql, filmId, id));
     }
-
 }

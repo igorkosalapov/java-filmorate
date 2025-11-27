@@ -14,6 +14,7 @@ import ru.yandex.practicum.filmorate.exception.NotFoundException;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Component("filmDbStorage")
 @RequiredArgsConstructor
@@ -87,20 +88,67 @@ public class FilmDbStorage implements FilmStorage {
 
         List<Film> films = jdbc.query(sql, mapper);
 
-        for (Film film : films) {
-            List<Genre> genres = genreDbStorage.findGenresByFilmId(film.getId())
-                    .stream()
-                    .distinct()
-                    .sorted(Comparator.comparingLong(Genre::getId))
-                    .toList();
+        if (films.isEmpty()) {
+            return films;
+        }
 
-            film.setGenres(new LinkedHashSet<>(genres));
-            film.getLikes().addAll(getLikes(film.getId()));
+        Set<Long> ids = films.stream()
+                .map(Film::getId)
+                .collect(Collectors.toSet());
+
+        Map<Long, List<Genre>> genresByFilm = genreDbStorage.findGenresForFilms(ids);
+
+        Map<Long, Set<Long>> likesByFilm = findLikesForFilms(ids);
+
+        for (Film film : films) {
+            film.setGenres(new LinkedHashSet<>(
+                    genresByFilm.getOrDefault(film.getId(), List.of())
+            ));
+
+            film.setLikes(new HashSet<>(
+                    likesByFilm.getOrDefault(film.getId(), Set.of())
+            ));
         }
 
         return films;
     }
 
+    @Override
+    public List<Film> getPopular(int count) {
+        String sql = """
+                SELECT f.*, m.name AS mpa_name
+                FROM films f
+                LEFT JOIN film_likes fl ON f.id = fl.film_id
+                JOIN mpa_ratings m ON f.mpa_id = m.id
+                GROUP BY f.id
+                ORDER BY COUNT(fl.user_id) DESC
+                LIMIT ?
+                """;
+
+        List<Film> films = jdbc.query(sql, mapper, count);
+
+        if (films.isEmpty()) {
+            return films;
+        }
+
+        Set<Long> ids = films.stream()
+                .map(Film::getId)
+                .collect(Collectors.toSet());
+
+        Map<Long, List<Genre>> genresByFilm = genreDbStorage.findGenresForFilms(ids);
+        Map<Long, Set<Long>> likesByFilm = findLikesForFilms(ids);
+
+        for (Film film : films) {
+            film.setGenres(new LinkedHashSet<>(
+                    genresByFilm.getOrDefault(film.getId(), List.of())
+            ));
+            film.setLikes(new HashSet<>(
+                    likesByFilm.getOrDefault(film.getId(), Set.of())
+            ));
+        }
+
+        return films;
+    }
 
     @Override
     public Optional<Film> findById(Long id) {
@@ -125,6 +173,32 @@ public class FilmDbStorage implements FilmStorage {
                     film.getLikes().addAll(getLikes(id));
                     return film;
                 });
+    }
+
+    private Map<Long, Set<Long>> findLikesForFilms(Set<Long> filmIds) {
+        if (filmIds.isEmpty()) {
+            return Map.of();
+        }
+
+        String placeholders = filmIds.stream()
+                .map(id -> "?")
+                .collect(Collectors.joining(","));
+
+        String sql = """
+                SELECT film_id, user_id
+                FROM film_likes
+                WHERE film_id IN (%s)
+                """.formatted(placeholders);
+
+        Map<Long, Set<Long>> result = new HashMap<>();
+
+        jdbc.query(sql, rs -> {
+            Long filmId = rs.getLong("film_id");
+            Long userId = rs.getLong("user_id");
+            result.computeIfAbsent(filmId, k -> new HashSet<>()).add(userId);
+        }, filmIds.toArray());
+
+        return result;
     }
 
     public void addLike(Long filmId, Long userId) {

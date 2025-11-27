@@ -34,7 +34,21 @@ public class FilmService {
     private final MpaStorage mpaStorage;
 
     public Collection<Film> findAll() {
-        return enrichFilms(filmStorage.findAll());
+        Collection<Film> films = filmStorage.findAll();
+
+        Set<Long> ids = films.stream()
+                .map(Film::getId)
+                .collect(Collectors.toSet());
+
+        Map<Long, List<Genre>> genresByFilm = genreStorage.findGenresForFilms(ids);
+
+        films.forEach(film -> {
+            TreeSet<Genre> sorted = new TreeSet<>(Comparator.comparingLong(Genre::getId));
+            sorted.addAll(genresByFilm.getOrDefault(film.getId(), List.of()));
+            film.setGenres(sorted);
+        });
+
+        return films;
     }
 
     public Film create(Film film) {
@@ -43,7 +57,7 @@ public class FilmService {
         mpaStorage.findById(film.getMpa().getId())
                 .orElseThrow(() -> new NotFoundException("MPA не найден"));
 
-        validateGenres(film.getGenres());
+        film.setGenres(validateGenres(film.getGenres()));
 
         filmStorage.create(film);
         return findById(film.getId());
@@ -58,7 +72,7 @@ public class FilmService {
         mpaStorage.findById(film.getMpa().getId())
                 .orElseThrow(() -> new NotFoundException("MPA не найден"));
 
-        validateGenres(film.getGenres());
+        film.setGenres(validateGenres(film.getGenres()));
 
         filmStorage.update(film);
         return findById(film.getId());
@@ -68,7 +82,14 @@ public class FilmService {
         Film film = filmStorage.findById(id)
                 .orElseThrow(() -> new NotFoundException("Фильм с id=" + id + " не найден"));
 
-        return enrichFilm(film);
+        List<Genre> genres = genreStorage.findGenresByFilmId(id);
+
+        TreeSet<Genre> sorted = new TreeSet<>(Comparator.comparingLong(Genre::getId));
+        sorted.addAll(genres);
+
+        film.setGenres(sorted);
+
+        return film;
     }
 
     public void addLike(long filmId, long userId) {
@@ -88,13 +109,21 @@ public class FilmService {
     }
 
     public List<Film> getPopular(int count) {
-        return filmStorage.findAll().stream()
-                .map(this::enrichFilm)
-                .sorted(Comparator.comparingInt((Film f) -> f.getLikes().size())
-                        .reversed()
-                        .thenComparing(Film::getId))
-                .limit(count)
-                .toList();
+        List<Film> films = filmStorage.getPopular(count);
+
+        Set<Long> ids = films.stream()
+                .map(Film::getId)
+                .collect(Collectors.toSet());
+
+        Map<Long, List<Genre>> genresByFilm = genreStorage.findGenresForFilms(ids);
+
+        films.forEach(film -> {
+            TreeSet<Genre> sorted = new TreeSet<>(Comparator.comparingLong(Genre::getId));
+            sorted.addAll(genresByFilm.getOrDefault(film.getId(), List.of()));
+            film.setGenres(sorted);
+        });
+
+        return films;
     }
 
     private void validate(Film film) {
@@ -113,23 +142,24 @@ public class FilmService {
         }
     }
 
-    private void validateGenres(Set<Genre> genres) {
-        if (genres == null) return;
-        for (Genre g : genres) {
-            genreStorage.findById(g.getId())
-                    .orElseThrow(() -> new NotFoundException("Жанр id=" + g.getId() + " не найден"));
+    private Set<Genre> validateGenres(Set<Genre> genres) {
+        if (genres == null || genres.isEmpty()) {
+            return Set.of();
         }
-    }
 
-    private Film enrichFilm(Film film) {
-        film.setGenres(
-                new TreeSet<>(Comparator.comparingLong(Genre::getId))
-        );
-        film.getGenres().addAll(genreStorage.findGenresByFilmId(film.getId()));
-        return film;
-    }
+        Set<Long> ids = genres.stream()
+                .map(Genre::getId)
+                .collect(Collectors.toSet());
 
-    private Collection<Film> enrichFilms(Collection<Film> films) {
-        return films.stream().map(this::enrichFilm).collect(Collectors.toList());
+        List<Genre> existing = genreStorage.findByIds(ids);
+
+        if (existing.size() != ids.size()) {
+            throw new NotFoundException("Некоторые жанры не существуют");
+        }
+
+        return existing.stream()
+                .collect(Collectors.toCollection(
+                        () -> new TreeSet<>(Comparator.comparingLong(Genre::getId))
+                ));
     }
 }

@@ -12,6 +12,8 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Component("userDbStorage")
 @RequiredArgsConstructor
@@ -69,4 +71,25 @@ public class UserDbStorage implements UserStorage {
                 .stream()
                 .findFirst();
     }
+
+    @Override
+    public List<User> findByIds(Set<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+
+        String placeholders = ids.stream()
+                .map(id -> "?")
+                .collect(Collectors.joining(","));
+
+        String sql = """
+                SELECT *
+                FROM users
+                WHERE id IN (%s)
+                ORDER BY id
+                """.formatted(placeholders);
+
+        return jdbc.query(sql, mapper, ids.toArray());
+    }
 }
+

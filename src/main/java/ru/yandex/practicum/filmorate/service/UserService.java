@@ -8,8 +8,9 @@ import ru.yandex.practicum.filmorate.model.User;
 import ru.yandex.practicum.filmorate.storage.friendship.FriendshipStorage;
 import ru.yandex.practicum.filmorate.storage.user.UserStorage;
 
+import java.util.HashSet;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -53,18 +54,16 @@ public class UserService {
 
     public List<User> getFriends(Long id) {
         getById(id);
-        return friendshipStorage.getFriends(id)
-                .stream()
-                .map(this::getById)
-                .collect(Collectors.toList());
+        Set<Long> friendIds = new HashSet<>(friendshipStorage.getFriends(id));
+        return userStorage.findByIds(friendIds);
     }
 
     public List<User> getCommonFriends(Long id, Long otherId) {
         getById(id);
         getById(otherId);
-        return friendshipStorage.getCommonFriends(id, otherId)
-                .stream()
-                .map(this::getById)
-                .collect(Collectors.toList());
+
+        Set<Long> commonIds = new HashSet<>(friendshipStorage.getCommonFriends(id, otherId));
+
+        return userStorage.findByIds(commonIds);
     }
 }
